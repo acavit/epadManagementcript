@@ -1,14 +1,15 @@
+#!/bin/bash
 # $1 expected install, start, stop, update
 # $2 expected a version master,latest,v0.1, v0.2 
 
 var_path=$(pwd)
-echo "path is $var_path"
+#echo "epad will be installed in : $var_path"
 # sytem configuration variables
 	var_version="master"
 	var_epadDistLocation="epad-dist"
 	var_epadLiteDistLocation="epad_lite_dist"
 	var_response=""
-	var_host=""
+	var_host="localhost"
 	var_mode="lite" # or thick
 	var_config="environment" # or nothing
 	var_container_mode="image" # or build
@@ -39,18 +40,18 @@ echo "path is $var_path"
 	copy_epad_dist (){
 		var_response="n"	
 		
-		if [ -d "$var_epadDistLocation" ]; then
+		if [[ -d "$var_path/$var_epadDistLocation" ]]; then
   			read -p  "epad-dist exist already exist do you want to owerwrite ? (y/n) (defult value is n): " var_response
 		else
 			cd $var_path
-  			git clone https://github.com/RubinLab/epad-dist.git
+  			git clone -b script https://github.com/RubinLab/epad-dist.git
 		fi
 
-		if [ $var_response == "y" ]; then
+		if [[ "$var_response" -eq "y" ]]; then
   			echo "copying epad-dist repo from git"
 			rm -rf "$var_path/$var_epadDistLocation"
 			cd $var_path
-  			git clone https://github.com/RubinLab/epad-dist.git
+  			git clone -b script https://github.com/RubinLab/epad-dist.git
 		fi
 	}
 
@@ -74,15 +75,15 @@ echo "path is $var_path"
 	}
 
 	stop_containers_all (){
-		export_keycloak
-		echo $!
-		result=""
+		#export_keycloak
+		#echo $!
+		#result=""
 
-		while [[ -z $result  ]]; do
-			result=$(cat exportkeycloak.log | grep "Export finished successfully")
-		done
+		#while [[ -z $result  ]]; do
+		#	result=$(cat exportkeycloak.log | grep "Export finished successfully")
+		#done
 
-		echo $result
+		#echo $result
 		cd "$var_path/$var_epadLiteDistLocation"
 		docker-compose stop
 		
@@ -103,12 +104,12 @@ echo "path is $var_path"
 				sleep 1
 			fi	
                         if [[ "$counter" -eq "10" ]]; then
-                                echo -en '                                        \r'
+                                echo -en 'starting epad                     \r'
 				counter=0
 				var_waiting="starting epad"
                         fi
                 done
-		echo "epad is ready to browse"
+		echo "epad is ready to browse : $var_host"
 	
 	}
 
@@ -133,7 +134,7 @@ echo "path is $var_path"
                                 var_waiting="starting epad"
                         fi
                 done
-                echo "epad is ready to browse"
+                echo "epad is ready to browse: $var_host"
 
         }
 
@@ -141,7 +142,7 @@ echo "path is $var_path"
 	collect_system_configuration(){
 		var_response=""
 		
-		read -p "hostname (default value : empty) :" var_response
+		read -p "hostname (default value : localhost) :" var_response
                 if [[ -n "$var_response" ]]
                 then
                         echo "response = $var_response"
@@ -177,7 +178,7 @@ echo "path is $var_path"
               	if [[ -n "$var_response" ]]
                 then
                         echo "response = $var_response"
-                        var_couchdb_locationn=$var_response
+                        var_couchdb_location=$var_response
                         echo "couchdb location : $var_couchdb_location"
                 fi
 	}
@@ -256,7 +257,7 @@ echo "path is $var_path"
 	}
 
 	import_keycloak(){
-		
+		echo "importing keycloak users...."		
 		docker exec -i epad_keycloak /opt/jboss/keycloak/bin/standalone.sh \
 		-Djboss.socket.binding.port-offset=100 -Dkeycloak.migration.action=import \
 		-Dkeycloak.migration.provider=$var_provider \
@@ -264,11 +265,20 @@ echo "path is $var_path"
 		-Dkeycloak.migration.usersExportStrategy=REALM_FILE \
 		-Dkeycloak.migration.file=$var_keycloak_export > importkeycloak.log &
 		echo $! > "$var_path/pid.txt"
+                echo $!
+                result=""
+
+                while [[ -z $result  ]]; do
+                        result=$(cat $var_path/exportkeycloak.log | grep "Export finished successfully")
+                done
+
+                echo $result
+
 
 	}
 
 	export_keycloak(){
-		
+		echo "eporting keycloak users....\n"
 		docker exec -i epad_keycloak /opt/jboss/keycloak/bin/standalone.sh \
 		-Djboss.socket.binding.port-offset=100 -Dkeycloak.migration.action=export \
 		-Dkeycloak.migration.provider=$var_provider \
@@ -276,6 +286,16 @@ echo "path is $var_path"
 		-Dkeycloak.migration.usersExportStrategy=REALM_FILE \
 		-Dkeycloak.migration.file=$var_keycloak_export  > exportkeycloak.log &
 		echo $! > "$var_path/pid.txt"
+		echo $!
+                result=""
+
+                while [[ -z $result  ]]; do
+                        result=$(cat $var_path/exportkeycloak.log | grep "Export finished successfully")
+                done
+
+                echo $result
+
+
 
 	}
 		
@@ -294,21 +314,28 @@ echo "path is $var_path"
 	if [ "$#" -gt 0 ]; then
 
 		if [[ $1 = "install" ]]; then	
+			echo "epad will be installed in : $var_path"
+			if [[ -d "$var_path/tmp" ]]; then
+				echo "tmp dir exist already"
+			else
+				mkdir "$var_path/tmp"
+				chmod 777 "$var_path/tmp"	
+			fi
 			#stop_containers_all
 			copy_epad_dist
 			collect_system_configuration
 			collect_user_credentials
 			edit_epad_yml
 			create_epad_lite_dist
-			#start_containers_viaCompose_all
-			check=0
-			while [[ "$check" -eq "0" ]]
-			do
-				if [ -d "$var_path/$var_epadLiteDistLocation" ]; then
-	                		start_containers_viaCompose_all
-					check=1
-				fi
-			done
+			start_containers_viaCompose_all
+			var_check=0
+			#while [[ "$var_check" -eq "0" ]]
+			#do
+			#	if [ -d "$var_path/$var_epadLiteDistLocation" ]; then
+	                #		start_containers_viaCompose_all
+			#		var_check=1
+			#	fi
+			#done
 
 		fi
 
@@ -323,8 +350,12 @@ echo "path is $var_path"
 		if [[ $1 = "update" ]]; then
                         if [[ $2 = "epad" ]]; then
 				echo "update epad"
-				#stop_containers_all
-				#export_keycloak
+				export_keycloak
+				stop_containers_all
+				cd "$var_path/$var_epadLiteDistLocation"
+				docker-compose build --no-cache
+				start_containers_viaCompose_all
+				import_keycloak
 			elif [[ $2 = "user" ]]; then
 				echo "update user"
 			else
